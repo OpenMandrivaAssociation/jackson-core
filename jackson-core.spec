@@ -5,7 +5,7 @@ Release:       1.3
 Group:		Development/Java
 Summary:       Core part of Jackson
 License:       ASL 2.0
-URL:           http://wiki.fasterxml.com/JacksonHome
+URL:           https://wiki.fasterxml.com/JacksonHome
 Source0:       https://github.com/FasterXML/jackson-core/archive/%{name}-%{version}.tar.gz
 
 BuildRequires: mvn(com.fasterxml.jackson:jackson-parent:pom:)
