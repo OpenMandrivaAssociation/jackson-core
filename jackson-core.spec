@@ -36,7 +36,9 @@ packaged, so the jar has no OSGi manifest. Tests are skipped.
 %setup -q -n jackson-core-jackson-core-%{version}
 # Shade would vendor fastdoubleparser. Replacer, moditect and the
 # bundle plugin are not packaged. jackson-base still points the jar
-# plugin at a manifest those plugins never write.
+# plugin at target/classes/META-INF/MANIFEST.MF. A child override does
+# not replace that parent pluginManagement entry, so the file has to
+# exist. It is the multi-release manifest.
 python - <<'PY'
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -143,6 +145,10 @@ if not license_file.is_file():
 meta = Path("src/main/resources/META-INF")
 meta.mkdir(parents=True, exist_ok=True)
 (meta / "LICENSE").write_bytes(license_file.read_bytes())
+(meta / "MANIFEST.MF").write_text(
+    "Manifest-Version: 1.0\nMulti-Release: true\n",
+    encoding="utf-8",
+)
 PY
 
 %build -a
