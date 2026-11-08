@@ -1,5 +1,5 @@
 Name:		jackson-core
-Version:	2.21.8
+Version:	2.23.0
 Release:	1
 Summary:	Core streaming API for Jackson
 Group:		Development/Java
@@ -15,6 +15,10 @@ BuildRequires:	mvn(com.fasterxml:oss-parent:pom::)
 # oss-parent pins the compiler plugin to this ASM jar.
 BuildRequires:	mvn(org.ow2.asm:asm)
 BuildRequires:	mvn(ch.randelshofer:fastdoubleparser)
+BuildRequires:	jackson-bom >= 2.23.0
+BuildRequires:	jackson-parent >= 2.23
+BuildRequires:	fasterxml-oss-parent >= 81
+BuildRequires:	fastdoubleparser >= 2.0.1
 # Literal, so the first rpmbuild -bs records them before sysjar is installed.
 BuildRequires:	maven
 BuildRequires:	java-current-devel
@@ -26,9 +30,11 @@ Obsoletes:	%{name}-javadoc < %{version}
 
 %description
 Streaming parser and generator used by Jackson, with the JSON
-implementation of that API. 2.21.8 fixes escape handling and
-non-blocking parsing, including CVE-2026-89407, CVE-2026-89425
-and CVE-2026-68498. Doubles, floats and big numbers are parsed
+implementation of that API. 2.23.0 rejects invalid UTF-8 in
+string values, enforces maxStringLength when decoding binary,
+stops reads past the end of a byte array, and makes number
+accessors independent of call order. Doubles, floats and big
+numbers are parsed
 with the system fastdoubleparser jar. The bundle plugin is not
 packaged, so the jar has no OSGi manifest. Tests are skipped.
 
