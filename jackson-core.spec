@@ -1,11 +1,13 @@
 Name:		jackson-core
 Version:	2.23.0
-Release:	1
+Release:	2
 Summary:	Core streaming API for Jackson
 Group:		Development/Java
 License:	ASL 2.0
 URL:		https://github.com/FasterXML/jackson-core
 Source0:	https://github.com/FasterXML/jackson-core/archive/refs/tags/jackson-core-%{version}.tar.gz#/jackson-core-%{version}.tar.gz
+# Gradle 9.9.1 strictly pins 2.22.3. No prebuilt jars.
+Source1:	https://github.com/FasterXML/jackson-core/archive/refs/tags/jackson-core-2.22.3.tar.gz#/jackson-core-2.22.3.tar.gz
 
 BuildArch:	noarch
 BuildRequires:	mvn(com.fasterxml.jackson:jackson-base:pom::)
@@ -37,9 +39,13 @@ accessors independent of call order. Doubles, floats and big
 numbers are parsed
 with the system fastdoubleparser jar. The bundle plugin is not
 packaged, so the jar has no OSGi manifest. Tests are skipped.
+2.23.0 stays the default jar. Gradle 9.9.1 strictly pins 2.22.3,
+so that jar is installed beside it.
 
 %prep
 %setup -q -n jackson-core-jackson-core-%{version}
+%setup -q -T -D -a 1 -n jackson-core-jackson-core-%{version}
+find . \( -name '*.jar' -o -name '*.class' -o -name '*.so' -o -name '*.node' -o -name '*.wasm' \) -delete
 # Shade would vendor fastdoubleparser. Replacer, moditect and the
 # bundle plugin are not packaged. jackson-base still points the jar
 # plugin at target/classes/META-INF/MANIFEST.MF. A child override does
@@ -166,6 +172,110 @@ javac --release 9 \
 test -s target/classes/META-INF/versions/9/module-info.class
 jar uf target/jackson-core-%{version}.jar -C target/classes META-INF/versions/9/module-info.class
 jar tf target/jackson-core-%{version}.jar | grep -q '^META-INF/versions/9/module-info.class$'
+
+# 2.22.3 side jar. fastdoubleparser is class version 52, so --release 8 can load it.
+mkdir -p jc222/gen/com/fasterxml/jackson/core/json jc222/classes
+sed -e 's/@package@/com.fasterxml.jackson.core.json/' \
+	-e 's/@projectversion@/2.22.3/' \
+	-e 's/@projectgroupid@/com.fasterxml.jackson.core/' \
+	-e 's/@projectartifactid@/jackson-core/' \
+	jackson-core-jackson-core-2.22.3/src/main/java/com/fasterxml/jackson/core/json/PackageVersion.java.in \
+	> jc222/gen/com/fasterxml/jackson/core/json/PackageVersion.java
+grep -F -q 'parseVersion(' jc222/gen/com/fasterxml/jackson/core/json/PackageVersion.java
+grep -F -q '"2.22.3"' jc222/gen/com/fasterxml/jackson/core/json/PackageVersion.java
+find jackson-core-jackson-core-2.22.3/src/main/java -name '*.java' > jc222/sources.list
+test "$(wc -l < jc222/sources.list)" -eq 135
+echo jc222/gen/com/fasterxml/jackson/core/json/PackageVersion.java >> jc222/sources.list
+javac --release 8 -encoding UTF-8 -Xlint:-options \
+	-cp %{_javadir}/fastdoubleparser.jar \
+	-d jc222/classes @jc222/sources.list
+/bin/cp -a jackson-core-jackson-core-2.22.3/src/main/resources/META-INF jc222/classes/
+cat > jc222/manifest.mf << 'EOF'
+Manifest-Version: 1.0
+Automatic-Module-Name: com.fasterxml.jackson.core
+
+EOF
+jar cfm jc222/jackson-core.jar jc222/manifest.mf -C jc222/classes .
+jar i jc222/jackson-core.jar
+javap -verbose -cp jc222/jackson-core.jar com.fasterxml.jackson.core.JsonFactory | grep -F 'major version: 52'
+jar --describe-module -f jc222/jackson-core.jar > jc222/describe.txt
+cat jc222/describe.txt
+if grep -F -q 'Unable to derive' jc222/describe.txt; then
+	exit 1
+fi
+grep -F -q 'com.fasterxml.jackson.core' jc222/describe.txt
+cat > jc222/jackson-core.pom << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.fasterxml.jackson.core</groupId>
+  <artifactId>jackson-core</artifactId>
+  <version>2.22.3</version>
+  <name>Jackson-core</name>
+  <description>Core Jackson processing abstractions, implementation for JSON</description>
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+    </license>
+  </licenses>
+  <dependencies>
+    <dependency>
+      <groupId>ch.randelshofer</groupId>
+      <artifactId>fastdoubleparser</artifactId>
+      <version>2.0.1</version>
+    </dependency>
+  </dependencies>
+</project>
+EOF
+
+%install -p
+sysjar install --buildroot %{buildroot} \
+	--artifact jc222/jackson-core.pom:jc222/jackson-core.jar \
+	--file-name jackson-core-2.22.3 \
+	--filelist .mfiles222
+# 2.23 owns jackson-core.sysjar. 2.22.3 keeps a second index.
+/bin/mv %{buildroot}/usr/share/sysjar/index/com.fasterxml.jackson.core/jackson-core.sysjar \
+	%{buildroot}/usr/share/sysjar/index/com.fasterxml.jackson.core/jackson-core-2.22.3.sysjar
+sed -i 's|/usr/share/sysjar/index/com.fasterxml.jackson.core/jackson-core\.sysjar|/usr/share/sysjar/index/com.fasterxml.jackson.core/jackson-core-2.22.3.sysjar|' .mfiles222
+
+%install -a
+while IFS= read -r line; do
+	grep -qxF -- "$line" .mfiles || printf '%s\n' "$line" >> .mfiles
+done < .mfiles222
+
+%check -a
+cat > JcSmoke.java << 'EOF'
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
+public class JcSmoke {
+	public static void main(String[] args) throws Exception {
+		JsonFactory factory = new JsonFactory();
+		try (JsonParser parser = factory.createParser("{\"k\":\"gradle\"}")) {
+			if (parser.nextToken() != JsonToken.START_OBJECT) {
+				throw new RuntimeException("start");
+			}
+			if (parser.nextToken() != JsonToken.FIELD_NAME || !"k".equals(parser.currentName())) {
+				throw new RuntimeException("field");
+			}
+			if (parser.nextToken() != JsonToken.VALUE_STRING || !"gradle".equals(parser.getText())) {
+				throw new RuntimeException(parser.getText());
+			}
+		}
+		System.out.println(args[0] + " " + factory.version() + " gradle");
+	}
+}
+EOF
+javac --release 8 -encoding UTF-8 -Xlint:-options \
+	-cp %{buildroot}%{_javadir}/jackson-core.jar JcSmoke.java
+java -cp "%{buildroot}%{_javadir}/jackson-core.jar:." JcSmoke jc223_ok > check223.log
+cat check223.log
+grep -F -q 'jc223_ok 2.23.0 gradle' check223.log
+javac --release 8 -encoding UTF-8 -Xlint:-options \
+	-cp %{buildroot}%{_javadir}/jackson-core-2.22.3.jar JcSmoke.java
+java -cp "%{buildroot}%{_javadir}/jackson-core-2.22.3.jar:%{_javadir}/fastdoubleparser.jar:." JcSmoke jc222_ok > check222.log
+cat check222.log
+grep -F -q 'jc222_ok 2.22.3 gradle' check222.log
 
 %files -f .mfiles
 %doc LICENSE README.md SECURITY.md release-notes/VERSION-2.x

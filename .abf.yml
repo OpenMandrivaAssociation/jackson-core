@@ -1,4 +1,5 @@
 sources:
   jackson-core-2.23.0.tar.gz: e0f5a5c5eaa57a17556a7ae419777aaedfd3fed6
+  jackson-core-2.22.3.tar.gz: 95b85ead8bfb9ce1d52392a6706b20fc74459337
 removed_sources:
   jackson-core-2.21.8.tar.gz: 83a9b86fdb2335c376868311629fe5368dd360c9
